@@ -127,8 +127,10 @@ Write-Host "  generated build\generated\{Version.props, Version.h, version.txt}"
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found - install Visual Studio 2022+" }
 # Use 64-bit MSBuild: the WDK's InfVerif step ships no x86 binary and fails under 32-bit MSBuild.
-$msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\amd64\MSBuild.exe | Select-Object -First 1
-if (-not $msbuild) { $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1 }
+# DS_VS_RANGE (e.g. "[17.0,18.0)") pins a Visual Studio version; CI uses it to stay on VS 2022.
+$vsRange = if ($env:DS_VS_RANGE) { @('-version', $env:DS_VS_RANGE) } else { @() }
+$msbuild = & $vswhere -latest @vsRange -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\amd64\MSBuild.exe | Select-Object -First 1
+if (-not $msbuild) { $msbuild = & $vswhere -latest @vsRange -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1 }
 if (-not $msbuild) { throw "MSBuild not found" }
 
 Write-Host "== compositor (dscomp) ==" -ForegroundColor Cyan

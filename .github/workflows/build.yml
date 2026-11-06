@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-2025
     timeout-minutes: 60
 
     steps:
@@ -25,6 +25,21 @@ jobs:
       # The runner image ships Visual Studio + Windows SDKs but NOT the WDK,
       # and not the "Windows Driver Kit" VS component that provides the
       # WindowsUserModeDriver10.0 platform toolset. Install both.
+      # WDK 10.0.26100 ships build tasks only for VS 2022 (MSBuild 17). Newer
+      # runner images default to VS 2026 (MSBuild 18), so pin VS 2022 if present.
+      - name: Pick Visual Studio 2022
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          & $vswhere -all -products * -property installationPath | ForEach-Object { Write-Host "::warning::VS install: $_" }
+          $vs17 = & $vswhere -version '[17.0,18.0)' -requires Microsoft.Component.MSBuild -property installationPath
+          if ($vs17) {
+            Write-Host "Using VS 2022 at $vs17"
+            "DS_VS_RANGE=[17.0,18.0)" >> $env:GITHUB_ENV
+          } else {
+            Write-Host "::warning::VS 2022 not found on this runner"
+          }
+
       - name: Install Windows Driver Kit
         shell: pwsh
         run: |
@@ -37,7 +52,8 @@ jobs:
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -requires Microsoft.Component.MSBuild -property installationPath
+          $range = if ($env:DS_VS_RANGE) { @('-version', $env:DS_VS_RANGE) } else { @() }
+          $vs = & $vswhere -latest @range -requires Microsoft.Component.MSBuild -property installationPath
           if (-not $vs) { throw "Visual Studio not found" }
           $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
           $p = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList `
@@ -50,7 +66,8 @@ jobs:
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = & $vswhere -latest -requires Microsoft.Component.MSBuild -property installationPath
+          $range = if ($env:DS_VS_RANGE) { @('-version', $env:DS_VS_RANGE) } else { @() }
+          $vs = & $vswhere -latest @range -requires Microsoft.Component.MSBuild -property installationPath
           $toolsets = Get-ChildItem "$vs\MSBuild\Microsoft\VC\*\Platforms\x64\PlatformToolsets\*" -Directory |
             Select-Object -ExpandProperty Name
           Write-Host "Toolsets: $($toolsets -join ', ')"
