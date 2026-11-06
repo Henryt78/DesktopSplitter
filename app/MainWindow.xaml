@@ -248,6 +248,70 @@
                     </StackPanel>
                 </Border>
 
+                <!-- ===================== profiles / hotkey / auto-switch ===================== -->
+                <TextBlock Text="PROFILES, HOTKEY &amp; AUTO-SWITCH" Style="{StaticResource SectionHeader}"/>
+                <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource PanelBorder}"
+                        BorderThickness="1" CornerRadius="4" Padding="12,10" Margin="0,0,0,16"
+                        DataContext="{Binding Extras}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox Grid.Column="0" ItemsSource="{Binding Profiles}"
+                                      SelectedItem="{Binding SelectedProfile}" DisplayMemberPath="Name"/>
+                            <Button Grid.Column="1" Content="Load" Margin="8,0,0,0"
+                                    ToolTip="Load the profile into the editor below"
+                                    Command="{Binding LoadProfileCommand}"/>
+                            <Button Grid.Column="2" Content="Apply" Margin="8,0,0,0"
+                                    Command="{Binding ApplyProfileCommand}"/>
+                            <Button Grid.Column="3" Content="Delete" Margin="8,0,0,0"
+                                    Command="{Binding DeleteProfileCommand}"/>
+                        </Grid>
+
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Text="{Binding NewProfileName, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Profile name, e.g. Recording, Office, Lesson"/>
+                            <Button Grid.Column="1" Content="Save editor as profile" Margin="8,0,0,0"
+                                    Command="{Binding SaveProfileCommand}"/>
+                        </Grid>
+
+                        <TextBlock Text="Trigger apps for this profile (process names, comma-separated, e.g. obs64, reaper64, Zoom):"
+                                   Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,10,0,4"
+                                   TextWrapping="Wrap"/>
+                        <TextBox Text="{Binding TriggerAppsText, UpdateSourceTrigger=LostFocus}"/>
+                        <CheckBox Content="Switch profiles automatically while a trigger app is running"
+                                  IsChecked="{Binding AutoSwitchEnabled}"
+                                  Foreground="{StaticResource ForegroundBrush}" Margin="0,8,0,0"/>
+                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                   Margin="0,4,0,0"
+                                   Text="When the trigger app closes, the previous split (or no split) comes back. The first matching profile in the list wins. Using the hotkey or the tray takes over until that app closes."/>
+
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <CheckBox Grid.Column="0" Content="Global hotkey toggles the split:"
+                                      IsChecked="{Binding HotkeyEnabled}" VerticalAlignment="Center"
+                                      Foreground="{StaticResource ForegroundBrush}"/>
+                            <TextBox Grid.Column="1" x:Name="HotkeyBox" Margin="8,0,0,0" IsReadOnly="True"
+                                     IsReadOnlyCaretVisible="False" Text="{Binding HotkeyText, Mode=OneWay}"
+                                     ToolTip="Click here, then press the new combination (at least one of Ctrl/Alt/Shift/Win)"
+                                     PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                        </Grid>
+                        <TextBlock Text="{Binding HotkeyStatus}" Foreground="{StaticResource MutedBrush}"
+                                   FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
                 <TextBlock Text="LAYOUT" Style="{StaticResource SectionHeader}"/>
                 <ListBox ItemsSource="{Binding Layouts}"
                          SelectedItem="{Binding SelectedLayout}"

@@ -15,6 +15,8 @@ public sealed class TrayIconService : IDisposable
     private readonly ContextMenuStrip _menu;
     private readonly ToolStripMenuItem _applyLastItem;
     private readonly ToolStripMenuItem _revertItem;
+    private readonly ToolStripMenuItem _toggleItem;
+    private readonly ToolStripMenuItem _profilesItem;
     private Icon? _generatedIcon;
     private IntPtr _generatedIconHandle;
     private bool _disposed;
@@ -27,6 +29,11 @@ public sealed class TrayIconService : IDisposable
         _revertItem = new ToolStripMenuItem("Revert");
         _revertItem.Click += (_, _) => RevertRequested?.Invoke(this, EventArgs.Empty);
 
+        _toggleItem = new ToolStripMenuItem("Toggle split on/off");
+        _toggleItem.Click += (_, _) => ToggleRequested?.Invoke(this, EventArgs.Empty);
+
+        _profilesItem = new ToolStripMenuItem("Profiles") { Enabled = false };
+
         var openItem = new ToolStripMenuItem("Open DesktopSplitter") { Font = new Font(SystemFonts.MenuFont ?? SystemFonts.DefaultFont, FontStyle.Bold) };
         openItem.Click += (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty);
 
@@ -36,6 +43,8 @@ public sealed class TrayIconService : IDisposable
         _menu = new ContextMenuStrip();
         _menu.Items.Add(openItem);
         _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(_toggleItem);
+        _menu.Items.Add(_profilesItem);
         _menu.Items.Add(_applyLastItem);
         _menu.Items.Add(_revertItem);
         _menu.Items.Add(new ToolStripSeparator());
@@ -55,6 +64,22 @@ public sealed class TrayIconService : IDisposable
     public event EventHandler? ApplyLastRequested;
     public event EventHandler? RevertRequested;
     public event EventHandler? ExitRequested;
+    public event EventHandler? ToggleRequested;
+    public event EventHandler<string>? ProfileRequested;
+
+    /// <summary>Rebuilds the "Profiles" submenu.</summary>
+    public void SetProfiles(IEnumerable<string> names)
+    {
+        if (_disposed) return;
+        _profilesItem.DropDownItems.Clear();
+        foreach (string name in names)
+        {
+            var item = new ToolStripMenuItem(name);
+            item.Click += (_, _) => ProfileRequested?.Invoke(this, name);
+            _profilesItem.DropDownItems.Add(item);
+        }
+        _profilesItem.Enabled = _profilesItem.DropDownItems.Count > 0;
+    }
 
     public bool ApplyLastEnabled
     {

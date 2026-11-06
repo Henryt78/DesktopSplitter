@@ -66,6 +66,8 @@ public sealed class MainViewModel : ObservableObject
         RefreshDriverStatus();
         RefreshCompositorStatus();
 
+        Extras = new ExtrasViewModel(this);
+
         AppendStatus("Ready.");
 
         // If a previous session died while the physical monitor was hidden, put it back.
@@ -76,6 +78,9 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>The "Display hiding (experimental)" panel.</summary>
     public HidingViewModel Hiding { get; }
+
+    /// <summary>Profiles, global hotkey, per-app auto-switching.</summary>
+    public ExtrasViewModel Extras { get; }
 
     /// <summary>Informational assembly version, produced by the shared versioning build step.</summary>
     public static string VersionText { get; } = ReadVersion();
@@ -937,18 +942,27 @@ public sealed class MainViewModel : ObservableObject
     private bool RestoreSettings(AppSettings? settings)
     {
         if (settings is null) return false;
+        return LoadConfiguration(settings.PhysicalDevice, settings.PhysicalFriendlyName, settings.Layout,
+                                 settings.Segments, $"Restored last settings from {SettingsStore.FilePath}.");
+    }
 
+    // ------------------------------------------------------------------ hooks for profiles / hotkey
+
+    /// <summary>Loads a configuration into the editor. False if its monitor is not connected.</summary>
+    public bool LoadConfiguration(string device, string friendlyName, LayoutKind layoutKind,
+                                  IReadOnlyList<SegmentSize> segments, string? announce = null)
+    {
         MonitorInfo? monitor = Monitors.FirstOrDefault(
-                                   m => string.Equals(m.DeviceName, settings.PhysicalDevice, StringComparison.OrdinalIgnoreCase))
+                                   m => string.Equals(m.DeviceName, device, StringComparison.OrdinalIgnoreCase))
                                ?? Monitors.FirstOrDefault(
-                                   m => string.Equals(m.FriendlyName, settings.PhysicalFriendlyName, StringComparison.OrdinalIgnoreCase));
+                                   m => string.Equals(m.FriendlyName, friendlyName, StringComparison.OrdinalIgnoreCase));
         if (monitor is null) return false;
 
         _suppressSegmentRebuild = true;
         try
         {
             _selectedMonitor = monitor;
-            _selectedLayout = LayoutDefinition.FromKind(settings.Layout);
+            _selectedLayout = LayoutDefinition.FromKind(layoutKind);
         }
         finally { _suppressSegmentRebuild = false; }
 
@@ -957,22 +971,75 @@ public sealed class MainViewModel : ObservableObject
         UpdateModeTexts();
         RebuildSegments(resetSizes: true);
 
-        if (settings.Segments.Count == Segments.Count)
+        if (segments.Count == Segments.Count)
         {
             _editorSuspended = true;
             try
             {
                 for (int i = 0; i < Segments.Count; i++)
-                    Segments[i].Set(settings.Segments[i].Width, settings.Segments[i].Height);
+                    Segments[i].Set(segments[i].Width, segments[i].Height);
             }
             finally { _editorSuspended = false; }
 
             RebuildEditor();
-            AppendStatus($"Restored last settings from {SettingsStore.FilePath}.");
+            if (announce is not null) AppendStatus(announce);
         }
 
         RaiseCommandStates();
         return true;
+    }
+
+    /// <summary>Snapshot of what the editor currently shows, or null if nothing is selected.</summary>
+    public LayoutProfile? CaptureEditor(string name)
+    {
+        if (SelectedMonitor is null || SelectedLayout is null) return null;
+        return new LayoutProfile
+        {
+            Name = name,
+            PhysicalDevice = SelectedMonitor.DeviceName,
+            PhysicalFriendlyName = SelectedMonitor.FriendlyName,
+            Layout = SelectedLayout.Kind,
+            Segments = Segments.Select(s => new SegmentSize { Width = s.Width, Height = s.Height }).ToList(),
+        };
+    }
+
+    /// <summary>Loads a profile into the editor and applies it.</summary>
+    public async Task<bool> ApplyProfileAsync(LayoutProfile profile, bool promptToConfirm)
+    {
+        if (IsBusy) return false;
+        if (!LoadConfiguration(profile.PhysicalDevice, profile.PhysicalFriendlyName, profile.Layout, profile.Segments))
+        {
+            AppendStatus($"Profile '{profile.Name}': monitor '{profile.PhysicalFriendlyName}' is not connected.");
+            return false;
+        }
+        AppendStatus($"--- Profile '{profile.Name}' ---");
+        await ApplyAsync(promptToConfirm).ConfigureAwait(true);
+        return true;
+    }
+
+    /// <summary>Hotkey: revert if split, otherwise re-apply the last configuration (no countdown).</summary>
+    public async Task ToggleSplitAsync()
+    {
+        if (IsBusy) return;
+        bool active = await Task.Run(HidingStatus.IsSplitActive).ConfigureAwait(true);
+        if (active)
+        {
+            await RevertAsync().ConfigureAwait(true);
+            return;
+        }
+
+        AppSettings? settings = SettingsStore.Load();
+        if (settings is null || settings.Segments.Count == 0)
+        {
+            AppendStatus("Hotkey: no previously applied configuration to switch on.");
+            return;
+        }
+        if (!RestoreSettings(settings))
+        {
+            AppendStatus($"Hotkey: monitor '{settings.PhysicalFriendlyName}' is not connected.");
+            return;
+        }
+        await ApplyAsync(promptToConfirm: false).ConfigureAwait(true);
     }
 }
 

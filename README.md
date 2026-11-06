@@ -81,6 +81,17 @@ default to it.
 - Tray icon with Apply-last / Revert; settings persist across restarts;
   the driver's monitor configuration survives reboots.
 
+### Profiles, hotkey & auto-switch (fork additions)
+
+- **Profiles**: save the current editor state under a name (e.g. *Recording*,
+  *Office*, *Lesson*), load or apply it later from the window or the tray's
+  *Profiles* submenu. Stored in `%APPDATA%\DesktopSplitter\extras.json`.
+- **Global hotkey** (default **Ctrl+Alt+Shift+D**, changeable): toggles the
+  split off, or back on with the last configuration — no countdown.
+- **Auto-switch per app**: give a profile trigger process names (e.g.
+  `obs64, reaper64`). While one runs, that profile is applied; when it
+  closes, the previous split (or no split) comes back.
+
 ## Hiding the physical monitor (experimental)
 
 By default the physical monitor technically remains a (covered) Windows

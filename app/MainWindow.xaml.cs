@@ -50,6 +50,30 @@ public partial class MainWindow : Window, IHidingUi
         VersionLabel.Text = MainViewModel.VersionText;
     }
 
+    // ------------------------------------------------------------------ hotkey capture
+
+    private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        e.Handled = true;
+        Key key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift
+                or Key.RightShift or Key.LWin or Key.RWin or Key.Tab or Key.None)
+        {
+            if (key == Key.Tab) e.Handled = false;
+            return;
+        }
+
+        uint mods = 0;
+        ModifierKeys m = Keyboard.Modifiers;
+        if ((m & ModifierKeys.Control) != 0) mods |= GlobalHotkeyService.MOD_CONTROL;
+        if ((m & ModifierKeys.Alt) != 0) mods |= GlobalHotkeyService.MOD_ALT;
+        if ((m & ModifierKeys.Shift) != 0) mods |= GlobalHotkeyService.MOD_SHIFT;
+        if ((m & ModifierKeys.Windows) != 0) mods |= GlobalHotkeyService.MOD_WIN;
+        if (mods == 0) return;
+
+        _viewModel.Extras.SetHotkey(mods, (uint)KeyInterop.VirtualKeyFromKey(key));
+    }
+
     // ------------------------------------------------------------------ IHidingUi
 
     public bool Confirm(string title, string message)

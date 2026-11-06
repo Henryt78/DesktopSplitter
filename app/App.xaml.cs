@@ -50,6 +50,11 @@ public partial class App : Application
         };
         _tray.RevertRequested += async (_, _) => await _viewModel.RevertAsync();
         _tray.ExitRequested += (_, _) => ExitApplication();
+        _tray.ToggleRequested += async (_, _) => await _viewModel.Extras.ToggleAsync();
+        _tray.ProfileRequested += async (_, name) => await _viewModel.Extras.ApplyProfileByNameAsync(name, prompt: false);
+        _tray.SetProfiles(_viewModel.Extras.Profiles.Select(p => p.Name));
+        _viewModel.Extras.ProfilesChanged += (_, _) => _tray?.SetProfiles(_viewModel.Extras.Profiles.Select(p => p.Name));
+        _viewModel.Extras.StartHotkey();
 
         _window = new MainWindow(_viewModel, _tray);
 
@@ -91,6 +96,7 @@ public partial class App : Application
         IsExiting = true;
         Teardown();
 
+        _viewModel?.Extras.Dispose();
         _tray?.Dispose();
         _tray = null;
         base.OnExit(e);
