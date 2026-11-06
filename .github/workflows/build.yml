@@ -71,7 +71,20 @@ jobs:
       - name: Build all (Release)
         id: build
         shell: pwsh
-        run: .\build.ps1 -Configuration Release -NoVersionBump
+        run: |
+          .\build.ps1 -Configuration Release -NoVersionBump *>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Surface build errors as public annotations (logs need auth to read).
+      - name: Report build errors
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path build.log) {
+            Get-Content build.log | Select-String -Pattern 'error|exception|failed' |
+              Select-Object -First 40 | ForEach-Object { Write-Host "::error::$($_.Line.Trim())" }
+            Get-Content build.log -Tail 15 | ForEach-Object { Write-Host "::warning::$_" }
+          }
 
       # -------------------------------------------------------------- check
       # CI runners execute elevated, so the shipping exe can run directly.
