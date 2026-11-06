@@ -39,6 +39,15 @@ param(
     [switch] $SkipAppPublish
 )
 
+# When launched as powershell.exe (5.1) from pwsh 7, PSModulePath still lists the
+# pwsh 7 module folders first, and their Microsoft.PowerShell.Security cannot load
+# in 5.1 (Get-AuthenticodeSignature then fails). Drop those paths.
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    $env:PSModulePath = ($env:PSModulePath -split ';' |
+        Where-Object { $_ -and $_ -notmatch '\\PowerShell\\7' -and $_ -notmatch '\\powershell\\Modules$' }) -join ';'
+    Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue
+}
+
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $scriptRoot)
