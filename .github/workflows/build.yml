@@ -43,10 +43,20 @@ jobs:
       - name: Install Windows Driver Kit
         shell: pwsh
         run: |
-          winget install --id Microsoft.WindowsWDK.10.0.26100 --exact `
+          # VS 2026 (MSBuild 18) needs WDK 10.0.28000+; 26100 only ships VS 2022 build tasks.
+          # The WDK MSI also needs the matching Windows SDK.
+          if ($env:DS_VS_RANGE) { $ver = '10.0.26100' } else { $ver = '10.0.28000' }
+          winget search Microsoft.WindowsWDK --accept-source-agreements |
+            ForEach-Object { Write-Host "::warning::winget: $_" }
+          if ($ver -ne '10.0.26100') {
+            winget install --id "Microsoft.WindowsSDK.$ver" --exact `
+              --accept-source-agreements --accept-package-agreements --disable-interactivity
+            if ($LASTEXITCODE -ne 0) { throw "winget SDK $ver install failed ($LASTEXITCODE)" }
+          }
+          winget install --id "Microsoft.WindowsWDK.$ver" --exact `
             --accept-source-agreements --accept-package-agreements `
             --disable-interactivity
-          if ($LASTEXITCODE -ne 0) { throw "winget WDK install failed ($LASTEXITCODE)" }
+          if ($LASTEXITCODE -ne 0) { throw "winget WDK $ver install failed ($LASTEXITCODE)" }
 
       - name: Add WDK component to Visual Studio
         shell: pwsh
