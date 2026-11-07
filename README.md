@@ -91,6 +91,11 @@ default to it.
 - **Auto-switch per app**: give a profile trigger process names (e.g.
   `obs64, reaper64`). While one runs, that profile is applied; when it
   closes, the previous split (or no split) comes back.
+- **Arrangement with other monitors**: by default the segments take the split
+  monitor's place next to your other monitors and the covered physical monitor
+  moves to the far right, so the cursor crosses straight into segment 1. Or drag
+  everything in Windows display settings and click *Save arrangement* — it is
+  reused for that monitor and layout.
 
 ## Hiding the physical monitor (experimental)
 

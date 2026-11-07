@@ -42,10 +42,18 @@ public sealed class ExtrasViewModel : ObservableObject
         ApplyProfileCommand = new RelayCommand(async () => await ApplySelectedAsync().ConfigureAwait(true),
                                                () => SelectedProfile is not null && !_main.IsBusy);
         DeleteProfileCommand = new RelayCommand(DeleteProfile, () => SelectedProfile is not null && !_main.IsBusy);
+        OpenDisplaySettingsCommand = new RelayCommand(OpenDisplaySettings);
+        SaveArrangementCommand = new RelayCommand(SaveArrangement, () => !_main.IsBusy);
+        ResetArrangementCommand = new RelayCommand(ResetArrangement, () => !_main.IsBusy);
+        _arrangementStatus = DescribeArrangement();
 
         _main.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(MainViewModel.IsBusy)) RaiseCommands();
+            if (e.PropertyName == nameof(MainViewModel.IsBusy))
+            {
+                RaiseCommands();
+                if (!_main.IsBusy) ArrangementStatus = DescribeArrangement();
+            }
         };
 
         _watchTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
@@ -158,6 +166,82 @@ public sealed class ExtrasViewModel : ObservableObject
         SelectedProfile = Profiles.FirstOrDefault();
         _main.AppendStatus($"Profile '{p.Name}' deleted.");
         Persist();
+    }
+
+    // ------------------------------------------------------------------ arrangement
+
+    private string _arrangementStatus = string.Empty;
+
+    public RelayCommand OpenDisplaySettingsCommand { get; }
+    public RelayCommand SaveArrangementCommand { get; }
+    public RelayCommand ResetArrangementCommand { get; }
+
+    public string ArrangementStatus
+    {
+        get => _arrangementStatus;
+        private set => SetProperty(ref _arrangementStatus, value);
+    }
+
+    private static void OpenDisplaySettings()
+    {
+        try { Process.Start(new ProcessStartInfo("ms-settings:display") { UseShellExecute = true })?.Dispose(); }
+        catch { /* nothing useful to do */ }
+    }
+
+    private void SaveArrangement()
+    {
+        AppSettings? last = SettingsStore.Load();
+        if (last is null)
+        {
+            _main.AppendStatus("Apply a split first, then arrange it in Windows and save.");
+            return;
+        }
+        try
+        {
+            SavedArrangement? saved = SplitArrangement.CaptureLive(last.PhysicalDevice, last.Layout, out string error);
+            if (saved is null)
+            {
+                _main.AppendStatus(error);
+                return;
+            }
+            _settings.Arrangements.RemoveAll(a => string.Equals(a.PhysicalDevice, saved.PhysicalDevice,
+                                                                 StringComparison.OrdinalIgnoreCase)
+                                                  && a.Layout == saved.Layout);
+            _settings.Arrangements.Add(saved);
+            Persist();
+            _main.AppendStatus($"Arrangement saved for {last.PhysicalFriendlyName} ({last.Layout}). It is used on every apply.");
+        }
+        catch (Exception ex)
+        {
+            _main.AppendStatus("Could not read the monitor arrangement: " + ex.Message);
+        }
+        ArrangementStatus = DescribeArrangement();
+    }
+
+    private void ResetArrangement()
+    {
+        AppSettings? last = SettingsStore.Load();
+        int removed = last is null
+            ? 0
+            : _settings.Arrangements.RemoveAll(a => string.Equals(a.PhysicalDevice, last.PhysicalDevice,
+                                                                   StringComparison.OrdinalIgnoreCase)
+                                                    && a.Layout == last.Layout);
+        Persist();
+        _main.AppendStatus(removed > 0
+            ? "Saved arrangement removed — the next apply arranges the monitors automatically."
+            : "No saved arrangement for the current monitor and layout.");
+        ArrangementStatus = DescribeArrangement();
+    }
+
+    private string DescribeArrangement()
+    {
+        AppSettings? last = SettingsStore.Load();
+        bool saved = last is not null && _settings.Arrangements.Any(
+            a => string.Equals(a.PhysicalDevice, last.PhysicalDevice, StringComparison.OrdinalIgnoreCase)
+                 && a.Layout == last.Layout);
+        return saved
+            ? "Using your saved arrangement for the current layout."
+            : "Automatic: the segments take the monitor's place next to your other monitors.";
     }
 
     // ------------------------------------------------------------------ hotkey
@@ -362,6 +446,8 @@ public sealed class ExtrasViewModel : ObservableObject
         LoadProfileCommand.RaiseCanExecuteChanged();
         ApplyProfileCommand.RaiseCanExecuteChanged();
         DeleteProfileCommand.RaiseCanExecuteChanged();
+        SaveArrangementCommand.RaiseCanExecuteChanged();
+        ResetArrangementCommand.RaiseCanExecuteChanged();
     }
 
     private void Persist()
@@ -369,6 +455,8 @@ public sealed class ExtrasViewModel : ObservableObject
         try
         {
             _settings.Profiles = Profiles.ToList();
+            // Homes are written by ApplyService directly; keep the on-disk copy.
+            _settings.Homes = ExtrasStore.Load().Homes;
             ExtrasStore.Save(_settings);
         }
         catch (Exception ex)

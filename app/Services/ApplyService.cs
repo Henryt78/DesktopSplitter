@@ -198,6 +198,9 @@ public static class ApplyService
         // exactly this monitor, which is not necessarily the one being split.
         (string previousPrimaryDevice, string previousPrimaryName) = CapturePreviousPrimary(before, log);
 
+        // Remember where the monitor sits among the others while nothing is split yet.
+        SplitArrangement.RecordHome(before, physical, log.Report);
+
         // a. Build and send DESKSPLIT_CONFIG.
         DESKSPLIT_CONFIG cfg = DriverClient.NewConfig();
         cfg.MonitorCount = (uint)segmentCount;
@@ -254,11 +257,10 @@ public static class ApplyService
         IReadOnlyList<MonitorInfo> current = DisplayConfig.Enumerate();
         MonitorInfo physicalNow = current.FirstOrDefault(m => SameDevice(m.DeviceName, physical.DeviceName))
             ?? throw new ApplyException($"{physical.DeviceName} is no longer active, so the split cannot be placed next to it.");
-        IReadOnlyList<DisplayArranger.VirtualPlacement> placements =
-            DisplayArranger.ComputePlacements(physicalNow, layout, virtualMonitors, request.Resolutions);
         string appliedPrimaryDevice = virtualMonitors[0].DeviceName;
         DisplayArranger.ApplyLayout(
-            DisplayArranger.ComposeLayout(current, placements, physical.MaxRefreshHz, appliedPrimaryDevice),
+            SplitArrangement.Compose(current, physicalNow, layout, virtualMonitors, request.Resolutions,
+                                     physical.MaxRefreshHz, appliedPrimaryDevice, log.Report),
             log.Report);
 
         // Re-read so config.json records what Windows actually settled on, keeping the

@@ -294,6 +294,18 @@
                                    Margin="0,4,0,0"
                                    Text="When the trigger app closes, the previous split (or no split) comes back. The first matching profile in the list wins. Using the hotkey or the tray takes over until that app closes."/>
 
+                        <TextBlock Text="Monitor arrangement" Foreground="{StaticResource ForegroundBrush}"
+                                   FontWeight="SemiBold" Margin="0,14,0,4"/>
+                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap"
+                                   Text="With the split applied, drag the monitors in Windows display settings (segments appear there as their own monitors), press Apply there, then save the arrangement here. It is reused for this monitor and layout."/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Content="Open Windows display settings" Command="{Binding OpenDisplaySettingsCommand}"/>
+                            <Button Content="Save arrangement" Margin="8,0,0,0" Command="{Binding SaveArrangementCommand}"/>
+                            <Button Content="Reset to automatic" Margin="8,0,0,0" Command="{Binding ResetArrangementCommand}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding ArrangementStatus}" Foreground="{StaticResource MutedBrush}"
+                                   FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+
                         <Grid Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>

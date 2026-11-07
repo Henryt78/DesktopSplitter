@@ -25,6 +25,42 @@ public sealed class ExtrasSettings
 
     [JsonPropertyName("autoSwitchEnabled")]
     public bool AutoSwitchEnabled { get; set; }
+
+    /// <summary>Where each split monitor sat among the other real monitors before any split.</summary>
+    [JsonPropertyName("homes")]
+    public List<MonitorHome> Homes { get; set; } = new();
+
+    /// <summary>Desktop arrangements the user dragged in Windows display settings and saved.</summary>
+    [JsonPropertyName("arrangements")]
+    public List<SavedArrangement> Arrangements { get; set; } = new();
+}
+
+/// <summary>A monitor rect stored relative to a reference monitor's top-left corner.</summary>
+public sealed class RelativeRect
+{
+    [JsonPropertyName("key")] public string Key { get; set; } = string.Empty;
+    [JsonPropertyName("dx")] public int Dx { get; set; }
+    [JsonPropertyName("dy")] public int Dy { get; set; }
+    [JsonPropertyName("w")] public int Width { get; set; }
+    [JsonPropertyName("h")] public int Height { get; set; }
+}
+
+/// <summary>Un-split desktop around one physical monitor (all real monitors, relative to a reference).</summary>
+public sealed class MonitorHome
+{
+    [JsonPropertyName("physicalDevice")] public string PhysicalDevice { get; set; } = string.Empty;
+    [JsonPropertyName("referenceDevice")] public string ReferenceDevice { get; set; } = string.Empty;
+    /// <summary>Key = device name of each real monitor (including the physical one).</summary>
+    [JsonPropertyName("monitors")] public List<RelativeRect> Monitors { get; set; } = new();
+}
+
+/// <summary>User-saved arrangement: keys "segment1".."segmentN" and "physical".</summary>
+public sealed class SavedArrangement
+{
+    [JsonPropertyName("physicalDevice")] public string PhysicalDevice { get; set; } = string.Empty;
+    [JsonPropertyName("referenceDevice")] public string ReferenceDevice { get; set; } = string.Empty;
+    [JsonPropertyName("layout")] public LayoutKind Layout { get; set; }
+    [JsonPropertyName("rects")] public List<RelativeRect> Rects { get; set; } = new();
 }
 
 /// <summary>A named, re-appliable split configuration.</summary>
