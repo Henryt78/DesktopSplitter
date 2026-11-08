@@ -56,8 +56,18 @@ jobs:
           if ($ver -ne '10.0.26100' -and $haveSdk) {
             Write-Host "Windows SDK $ver already on the runner."
           } elseif ($ver -ne '10.0.26100') {
-            winget install --id "Microsoft.WindowsSDK.$ver" --exact `
-              --accept-source-agreements --accept-package-agreements --disable-interactivity
+            # The newest winget build of an SDK is occasionally broken; fall back to older builds.
+            $sdkVersions = winget show --id "Microsoft.WindowsSDK.$ver" --exact --versions `
+                             --accept-source-agreements --disable-interactivity |
+                           Where-Object { $_ -match '^\s*10\.' } | ForEach-Object { $_.Trim() } |
+                           Select-Object -First 4
+            Write-Host "::warning::SDK $ver versions: $($sdkVersions -join ', ')"
+            foreach ($sv in $sdkVersions) {
+              winget install --id "Microsoft.WindowsSDK.$ver" --exact --version $sv `
+                --accept-source-agreements --accept-package-agreements --disable-interactivity
+              if ($LASTEXITCODE -eq 0) { Write-Host "::warning::Installed SDK $sv"; break }
+              Write-Host "::warning::SDK $sv failed ($LASTEXITCODE)"
+            }
             if ($LASTEXITCODE -ne 0 -and (Test-Path "$kits\$ver.*\um\windows.h")) {
               Write-Host "::warning::SDK installer returned $LASTEXITCODE but the SDK is present; continuing."
               $global:LASTEXITCODE = 0
