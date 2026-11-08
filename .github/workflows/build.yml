@@ -51,9 +51,17 @@ jobs:
               Where-Object { $_ -match 'Microsoft\.Windows' } |
               ForEach-Object { Write-Host "::warning::winget $($q): $($_.Trim())" }
           }
-          if ($ver -ne '10.0.26100') {
+          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
+          $haveSdk = Test-Path "$kits\$ver.*\um\windows.h"
+          if ($ver -ne '10.0.26100' -and $haveSdk) {
+            Write-Host "Windows SDK $ver already on the runner."
+          } elseif ($ver -ne '10.0.26100') {
             winget install --id "Microsoft.WindowsSDK.$ver" --exact `
               --accept-source-agreements --accept-package-agreements --disable-interactivity
+            if ($LASTEXITCODE -ne 0 -and (Test-Path "$kits\$ver.*\um\windows.h")) {
+              Write-Host "::warning::SDK installer returned $LASTEXITCODE but the SDK is present; continuing."
+              $global:LASTEXITCODE = 0
+            }
             if ($LASTEXITCODE -ne 0) {
               Write-Host "::error::winget SDK $ver install failed ($LASTEXITCODE)"; Show-Ids 'WindowsSDK'; exit 1
             }
