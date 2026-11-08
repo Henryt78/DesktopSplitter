@@ -244,6 +244,53 @@ namespace
         return true;
     }
 
+    // Creates %ProgramData%\DesktopSplitter and gives BUILTIN\Users modify rights on it
+    // (inherited by config.json). The app runs unelevated and must rewrite config.json on
+    // every apply; without this, a file created once by an elevated run is read-only to it.
+    bool GrantProgramDataAccess(DWORD* pExitCode)
+    {
+        wchar_t Dir[MAX_PATH] = {};
+        if (GetEnvironmentVariableW(L"ProgramData", Dir, ARRAYSIZE(Dir)) == 0 ||
+            FAILED(StringCchCatW(Dir, ARRAYSIZE(Dir), L"\\DesktopSplitter")))
+        {
+            return false;
+        }
+        CreateDirectoryW(Dir, nullptr);
+
+        wchar_t Exe[MAX_PATH] = {};
+        if (GetSystemDirectoryW(Exe, ARRAYSIZE(Exe)) == 0 ||
+            FAILED(StringCchCatW(Exe, ARRAYSIZE(Exe), L"\\icacls.exe")))
+        {
+            return false;
+        }
+
+        wchar_t CommandLine[MAX_PATH * 2 + 128] = {};
+        if (FAILED(StringCchPrintfW(CommandLine, ARRAYSIZE(CommandLine),
+                                    L"\"%s\" \"%s\" /grant *S-1-5-32-545:(OI)(CI)M /T /C /Q", Exe, Dir)))
+        {
+            return false;
+        }
+
+        STARTUPINFOW StartupInfo = { sizeof(STARTUPINFOW) };
+        StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
+        StartupInfo.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION ProcessInfo = {};
+        if (!CreateProcessW(Exe, CommandLine, nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                            nullptr, nullptr, &StartupInfo, &ProcessInfo))
+        {
+            return false;
+        }
+
+        WaitForSingleObject(ProcessInfo.hProcess, 60000);
+        if (!GetExitCodeProcess(ProcessInfo.hProcess, pExitCode))
+        {
+            *pExitCode = static_cast<DWORD>(-1);
+        }
+        CloseHandle(ProcessInfo.hThread);
+        CloseHandle(ProcessInfo.hProcess);
+        return true;
+    }
+
     // Opens the driver's device interface, if the driver is running.
     HANDLE OpenDriverInterface()
     {
@@ -580,6 +627,16 @@ namespace DeskSplit
                 break;
             }
             Detailf(pSink, L"Copied %.1f MB.", static_cast<double>(Bytes) / (1024.0 * 1024.0));
+
+            DWORD AclExit = 0;
+            if (GrantProgramDataAccess(&AclExit) && AclExit == 0)
+            {
+                Detailf(pSink, L"Granted users write access to the shared configuration folder.");
+            }
+            else
+            {
+                Detailf(pSink, L"NOTE: could not set permissions on the configuration folder (code %lu).", AclExit);
+            }
             pSink->OnProgress(92);
 
             // ---- 9. shortcuts, registry ------------------------------------

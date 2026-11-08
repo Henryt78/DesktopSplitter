@@ -1065,12 +1065,55 @@ public static class ApplyService
     /// Writes config.json to %ProgramData%\DesktopSplitter. There is deliberately no
     /// fallback location: the compositor's contract is a single fixed path.
     /// </summary>
-    public static void WriteCompositorConfig(CompositorConfig config)
+    /// <summary>
+    /// Grants BUILTIN\Users modify rights on the config folder (and config.json) via an elevated
+    /// icacls — one UAC prompt. Needed when an earlier elevated run created config.json, which
+    /// leaves it read-only for the normal, unelevated app.
+    /// </summary>
+    private static bool TryGrantConfigAccess()
     {
         try
         {
+            using Process? p = Process.Start(new ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                Arguments = $"/c mkdir \"{ConfigDirectory}\" 2>nul & icacls \"{ConfigDirectory}\" /grant *S-1-5-32-545:(OI)(CI)M /T /C /Q",
+                UseShellExecute = true, // required for runas
+                Verb = "runas",
+                WindowStyle = ProcessWindowStyle.Hidden,
+            });
+            if (p is null) return false;
+            p.WaitForExit(60_000);
+            return p.HasExited && p.ExitCode == 0;
+        }
+        catch
+        {
+            return false; // UAC declined or icacls missing
+        }
+    }
+
+    public static void WriteCompositorConfig(CompositorConfig config)
+    {
+        string json = JsonSerializer.Serialize(config, JsonOptions);
+        try
+        {
             Directory.CreateDirectory(ConfigDirectory);
-            File.WriteAllText(ConfigPath, JsonSerializer.Serialize(config, JsonOptions));
+            File.WriteAllText(ConfigPath, json);
+        }
+        catch (Exception ex) when ((ex is UnauthorizedAccessException or System.Security.SecurityException)
+                                   && TryGrantConfigAccess())
+        {
+            // One UAC prompt fixed the folder permissions; write again.
+            try
+            {
+                File.WriteAllText(ConfigPath, json);
+                return;
+            }
+            catch (Exception retry) when (retry is UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                throw new ApplyException(
+                    $"Access denied writing {ConfigPath} even after fixing its permissions.", retry);
+            }
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
         {
