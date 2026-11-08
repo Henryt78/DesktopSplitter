@@ -249,7 +249,7 @@
                 </Border>
 
                 <!-- ===================== profiles / hotkey / auto-switch ===================== -->
-                <TextBlock Text="PROFILES, HOTKEY &amp; AUTO-SWITCH" Style="{StaticResource SectionHeader}"/>
+                <TextBlock Text="PROFILES, HOTKEYS &amp; EXTRAS" Style="{StaticResource SectionHeader}"/>
                 <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource PanelBorder}"
                         BorderThickness="1" CornerRadius="4" Padding="12,10" Margin="0,0,0,16"
                         DataContext="{Binding Extras}">
@@ -306,21 +306,102 @@
                         <TextBlock Text="{Binding ArrangementStatus}" Foreground="{StaticResource MutedBrush}"
                                    FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
 
-                        <Grid Margin="0,12,0,0">
+                        <TextBlock Text="Window layout of this profile" Foreground="{StaticResource ForegroundBrush}" FontWeight="SemiBold" Margin="0,14,0,4"/>
+                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Text="Arrange your windows (e.g. OBS left, DAW right, browser on the 27&quot;), then save. Applying the profile puts every saved window that is running back in place."/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Content="Save current windows to profile" Command="{Binding SaveWindowsCommand}"/>
+                            <Button Content="Forget windows" Margin="8,0,0,0" Command="{Binding ClearWindowsCommand}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding WindowsText}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                        <TextBlock Text="Primary monitor &amp; recording mode" Foreground="{StaticResource ForegroundBrush}" FontWeight="SemiBold" Margin="0,14,0,4"/>
+                        <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="230"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <CheckBox Grid.Column="0" Content="Global hotkey toggles the split:"
-                                      IsChecked="{Binding HotkeyEnabled}" VerticalAlignment="Center"
-                                      Foreground="{StaticResource ForegroundBrush}"/>
-                            <TextBox Grid.Column="1" x:Name="HotkeyBox" Margin="8,0,0,0" IsReadOnly="True"
-                                     IsReadOnlyCaretVisible="False" Text="{Binding HotkeyText, Mode=OneWay}"
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Primary monitor under the split:" Foreground="{StaticResource ForegroundBrush}" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding PrimaryChoices}"
+                                      DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding PrimaryKey}"/>
+                            <TextBlock Grid.Row="1" Text="Primary while recording:" Foreground="{StaticResource ForegroundBrush}" VerticalAlignment="Center" Margin="0,6,0,0"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" ItemsSource="{Binding PrimaryChoices}"
+                                      DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding RecordingPrimaryKey}"/>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Content="Recording mode on/off" Command="{Binding ToggleRecordingCommand}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding RecordingText}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" Text="Windows shows notifications, the Start menu and most pop-ups on the primary monitor. Recording mode moves primary off the recorded segments (the split is re-applied briefly)."/>
+
+                        <TextBlock Text="Overlays" Foreground="{StaticResource ForegroundBrush}" FontWeight="SemiBold" Margin="0,14,0,4"/>
+                        <StackPanel Orientation="Horizontal">
+                            <CheckBox Content="Coloured frame around segment" IsChecked="{Binding BorderEnabled}"
+                                      Foreground="{StaticResource ForegroundBrush}" VerticalAlignment="Center"/>
+                            <ComboBox Width="60" Margin="8,0,0,0" ItemsSource="{Binding SegmentNumbers}"
+                                      SelectedItem="{Binding BorderSegment}"/>
+                        </StackPanel>
+                        <CheckBox Content="Divider line between segments" IsChecked="{Binding DividerEnabled}"
+                                  Foreground="{StaticResource ForegroundBrush}" Margin="0,6,0,0"/>
+                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Text="Both are click-through. They are drawn on the segments, so a screen recording of that segment shows them too."/>
+
+                        <TextBlock Text="Split ratio (two-segment layouts)" Foreground="{StaticResource ForegroundBrush}" FontWeight="SemiBold" Margin="0,14,0,4"/>
+                        <Grid IsEnabled="{Binding SplitRatioAvailable}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Slider Grid.Column="0" Minimum="20" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="False"
+                                    SmallChange="1" LargeChange="5" Value="{Binding SplitRatioPercent, Mode=TwoWay}"
+                                    VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Margin="8,0,0,0" Foreground="{StaticResource ForegroundBrush}" VerticalAlignment="Center"
+                                       Text="{Binding SplitRatioPercent, StringFormat='Segment 1: {0:0} %'}"/>
+                        </Grid>
+                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" Text="Sets the segment sizes in the editor below; press Apply to use them."/>
+
+                        <TextBlock Text="Hotkeys" Foreground="{StaticResource ForegroundBrush}" FontWeight="SemiBold" Margin="0,14,0,4"/>
+                        <CheckBox Content="Enable global hotkeys" IsChecked="{Binding HotkeyEnabled}" Foreground="{StaticResource ForegroundBrush}"/>
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="230"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Split on/off:" Foreground="{StaticResource ForegroundBrush}" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Tag="toggle" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                                     Text="{Binding HotkeyText, Mode=OneWay}"
                                      ToolTip="Click here, then press the new combination (at least one of Ctrl/Alt/Shift/Win)"
                                      PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
                         </Grid>
-                        <TextBlock Text="{Binding HotkeyStatus}" Foreground="{StaticResource MutedBrush}"
-                                   FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="230"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Move active window to next monitor:" Foreground="{StaticResource ForegroundBrush}" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Tag="move" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                                     Text="{Binding MoveHotkeyText, Mode=OneWay}"
+                                     ToolTip="Click here, then press the new combination (at least one of Ctrl/Alt/Shift/Win)"
+                                     PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                        </Grid>
+                        <Grid Margin="0,6,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="230"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Recording mode on/off:" Foreground="{StaticResource ForegroundBrush}" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Tag="record" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                                     Text="{Binding RecordHotkeyText, Mode=OneWay}"
+                                     ToolTip="Click here, then press the new combination (at least one of Ctrl/Alt/Shift/Win)"
+                                     PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                        </Grid>
+                        <CheckBox Content="Ctrl+Alt+Shift+1…9 apply profiles 1…9" IsChecked="{Binding ProfileHotkeysEnabled}"
+                                  Foreground="{StaticResource ForegroundBrush}" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding ProfileHotkeysText}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0" Text="Emergency off: Ctrl+Alt+Shift+End ends DesktopSplitter and removes the split — even when the app hangs."/>
+                        <TextBlock Text="{Binding HotkeyStatus}" Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
 

@@ -820,6 +820,7 @@ public sealed class MainViewModel : ObservableObject
             RefreshDriverStatus();
             RefreshCompositorStatus();
             _ = Hiding.RefreshAsync();
+            SplitChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -851,6 +852,7 @@ public sealed class MainViewModel : ObservableObject
             RefreshDriverStatus();
             RefreshCompositorStatus();
             _ = Hiding.RefreshAsync();
+            SplitChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -1015,6 +1017,51 @@ public sealed class MainViewModel : ObservableObject
         AppendStatus($"--- Profile '{profile.Name}' ---");
         await ApplyAsync(promptToConfirm).ConfigureAwait(true);
         return true;
+    }
+
+    /// <summary>Raised after every apply or revert attempt (success or not).</summary>
+    public event EventHandler? SplitChanged;
+
+    /// <summary>Re-applies the last applied configuration without the countdown.</summary>
+    public async Task<bool> ReapplyLastAsync()
+    {
+        if (IsBusy) return false;
+        AppSettings? settings = SettingsStore.Load();
+        if (settings is null || settings.Segments.Count == 0 || !RestoreSettings(settings)) return false;
+        await ApplyAsync(promptToConfirm: false).ConfigureAwait(true);
+        return true;
+    }
+
+    /// <summary>True when the editor shows a two-segment layout (side by side or stacked).</summary>
+    public bool IsTwoSegmentLayout =>
+        (SelectedLayout?.Kind is LayoutKind.TwoVertical or LayoutKind.TwoHorizontal) && Segments.Count == 2;
+
+    /// <summary>Sets a two-segment split to <paramref name="firstShare"/> (0.2–0.8) of the monitor.</summary>
+    public void SetSplitRatio(double firstShare)
+    {
+        if (!IsTwoSegmentLayout || SelectedMonitor is null || SelectedLayout is null) return;
+        firstShare = Math.Clamp(firstShare, 0.2, 0.8);
+        int pw = SelectedMonitor.CurrentWidth, ph = SelectedMonitor.CurrentHeight; // same basis as the default sizes
+
+        _editorSuspended = true;
+        try
+        {
+            if (SelectedLayout.Kind == LayoutKind.TwoVertical)
+            {
+                int w1 = (int)Math.Round(pw * firstShare / 8.0) * 8;
+                Segments[0].Set(w1, ph);
+                Segments[1].Set(pw - w1, ph);
+            }
+            else
+            {
+                int h1 = (int)Math.Round(ph * firstShare / 8.0) * 8;
+                Segments[0].Set(pw, h1);
+                Segments[1].Set(pw, ph - h1);
+            }
+        }
+        finally { _editorSuspended = false; }
+        RebuildEditor();
+        RaiseCommandStates();
     }
 
     /// <summary>Hotkey: revert if split, otherwise re-apply the last configuration (no countdown).</summary>

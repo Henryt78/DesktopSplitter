@@ -71,7 +71,8 @@ public partial class MainWindow : Window, IHidingUi
         if ((m & ModifierKeys.Windows) != 0) mods |= GlobalHotkeyService.MOD_WIN;
         if (mods == 0) return;
 
-        _viewModel.Extras.SetHotkey(mods, (uint)KeyInterop.VirtualKeyFromKey(key));
+        string which = (sender as FrameworkElement)?.Tag as string ?? "toggle";
+        _viewModel.Extras.SetHotkey(which, mods, (uint)KeyInterop.VirtualKeyFromKey(key));
     }
 
     // ------------------------------------------------------------------ IHidingUi

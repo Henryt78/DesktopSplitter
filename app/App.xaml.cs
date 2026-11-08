@@ -22,6 +22,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Emergency-off helper process: no window, no tray, just the hotkey.
+        if (EmergencyWatchdog.TryRun(this, e.Args)) return;
+
         LaunchedAtStartup = StartupRegistration.LaunchedAtStartup(e.Args);
 
         DispatcherUnhandledException += (_, args) =>
@@ -60,6 +63,8 @@ public partial class App : Application
 
         // Auto-started at logon: go straight to the tray rather than popping the window open.
         if (!LaunchedAtStartup) _window.Show();
+
+        EmergencyWatchdog.Launch();
 
         _ = _viewModel.AutoApplyOnStartupAsync();
     }

@@ -257,7 +257,7 @@ public static class ApplyService
         IReadOnlyList<MonitorInfo> current = DisplayConfig.Enumerate();
         MonitorInfo physicalNow = current.FirstOrDefault(m => SameDevice(m.DeviceName, physical.DeviceName))
             ?? throw new ApplyException($"{physical.DeviceName} is no longer active, so the split cannot be placed next to it.");
-        string appliedPrimaryDevice = virtualMonitors[0].DeviceName;
+        string appliedPrimaryDevice = SplitArrangement.ResolvePrimary(current, virtualMonitors, physicalNow.DeviceName, log.Report);
         DisplayArranger.ApplyLayout(
             SplitArrangement.Compose(current, physicalNow, layout, virtualMonitors, request.Resolutions,
                                      physical.MaxRefreshHz, appliedPrimaryDevice, log.Report),

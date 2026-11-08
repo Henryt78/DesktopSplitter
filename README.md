@@ -97,6 +97,20 @@ default to it.
   everything in Windows display settings and click *Save arrangement* — it is
   reused for that monitor and layout.
 
+- **Hotkeys**: Ctrl+Alt+Shift+**1…9** apply profiles 1…9; Ctrl+Alt+Shift+**M**
+  moves the active window to the next monitor (the covered physical monitor is
+  skipped); Ctrl+Alt+Shift+**R** toggles recording mode. All changeable.
+- **Window layout per profile**: save where your windows are; applying the
+  profile puts the running ones back.
+- **Primary monitor & recording mode**: choose which monitor is primary under the
+  split. Recording mode moves primary (notifications, Start menu, most pop-ups)
+  off the segments while you record.
+- **Overlays**: optional coloured frame around one segment and divider lines
+  between segments (click-through; visible in captures of that segment).
+- **Split-ratio slider** for two-segment layouts.
+- **Emergency off**: Ctrl+Alt+Shift+**End** is owned by a separate watchdog
+  process, so it ends DesktopSplitter and removes the split even if the app hangs.
+
 ## Hiding the physical monitor (experimental)
 
 By default the physical monitor technically remains a (covered) Windows

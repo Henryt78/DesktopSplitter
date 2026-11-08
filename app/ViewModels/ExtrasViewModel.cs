@@ -23,6 +23,8 @@ public sealed class ExtrasViewModel : ObservableObject
     private string _triggerAppsText = string.Empty;
     private string _hotkeyStatus = string.Empty;
     private bool _watchTickRunning;
+    private double _splitRatio = 50;
+    private readonly OverlayService _overlays = new();
 
     // Auto-switch state.
     private LayoutProfile? _autoActive;          // profile auto-switch applied
@@ -46,9 +48,26 @@ public sealed class ExtrasViewModel : ObservableObject
         SaveArrangementCommand = new RelayCommand(SaveArrangement, () => !_main.IsBusy);
         ResetArrangementCommand = new RelayCommand(ResetArrangement, () => !_main.IsBusy);
         _arrangementStatus = DescribeArrangement();
+        SaveWindowsCommand = new RelayCommand(SaveWindows, () => SelectedProfile is not null);
+        ClearWindowsCommand = new RelayCommand(ClearWindows, () => SelectedProfile is not null);
+        ToggleRecordingCommand = new RelayCommand(async () => await ToggleRecordingAsync().ConfigureAwait(true),
+                                                  () => !_main.IsBusy);
+
+        // Recording mode never survives a restart of the app.
+        if (_settings.RecordingMode)
+        {
+            _settings.RecordingMode = false;
+            try { ExtrasStore.Save(_settings); } catch { /* best effort */ }
+        }
+
+        _main.SplitChanged += (_, _) => RefreshOverlays();
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += (_, _) =>
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(RefreshOverlays));
 
         _main.PropertyChanged += (_, e) =>
         {
+            if (e.PropertyName == nameof(MainViewModel.SelectedLayout))
+                OnPropertyChanged(nameof(SplitRatioAvailable));
             if (e.PropertyName == nameof(MainViewModel.IsBusy))
             {
                 RaiseCommands();
@@ -76,6 +95,7 @@ public sealed class ExtrasViewModel : ObservableObject
             _triggerAppsText = FormatTriggers(value);
             OnPropertyChanged(nameof(TriggerAppsText));
             if (value is not null) NewProfileName = value.Name;
+            OnPropertyChanged(nameof(WindowsText));
             RaiseCommands();
         }
     }
@@ -154,7 +174,7 @@ public sealed class ExtrasViewModel : ObservableObject
         LayoutProfile? p = Profiles.FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
         if (p is null) return;
         TakeOverFromAuto();
-        await _main.ApplyProfileAsync(p, prompt).ConfigureAwait(true);
+        await ApplyProfileWithWindowsAsync(p, prompt).ConfigureAwait(true);
     }
 
     private void DeleteProfile()
@@ -244,7 +264,7 @@ public sealed class ExtrasViewModel : ObservableObject
             : "Automatic: the segments take the monitor's place next to your other monitors.";
     }
 
-    // ------------------------------------------------------------------ hotkey
+    // ------------------------------------------------------------------ hotkeys
 
     public bool HotkeyEnabled
     {
@@ -255,11 +275,26 @@ public sealed class ExtrasViewModel : ObservableObject
             _settings.HotkeyEnabled = value;
             OnPropertyChanged();
             Persist();
-            RegisterHotkey();
+            RegisterHotkeys();
+        }
+    }
+
+    public bool ProfileHotkeysEnabled
+    {
+        get => _settings.ProfileHotkeysEnabled;
+        set
+        {
+            if (_settings.ProfileHotkeysEnabled == value) return;
+            _settings.ProfileHotkeysEnabled = value;
+            OnPropertyChanged();
+            Persist();
+            RegisterHotkeys();
         }
     }
 
     public string HotkeyText => GlobalHotkeyService.Describe(_settings.HotkeyModifiers, _settings.HotkeyKey);
+    public string MoveHotkeyText => GlobalHotkeyService.Describe(_settings.MoveHotkeyModifiers, _settings.MoveHotkeyKey);
+    public string RecordHotkeyText => GlobalHotkeyService.Describe(_settings.RecordHotkeyModifiers, _settings.RecordHotkeyKey);
 
     public string HotkeyStatus
     {
@@ -267,12 +302,41 @@ public sealed class ExtrasViewModel : ObservableObject
         private set => SetProperty(ref _hotkeyStatus, value);
     }
 
+    /// <summary>Profiles 1..9 and their hotkeys, for display.</summary>
+    public string ProfileHotkeysText =>
+        Profiles.Count == 0
+            ? "Save a profile to get Ctrl+Alt+Shift+1…9."
+            : string.Join("   ", Profiles.Take(9).Select((p, i) => $"{i + 1} = {p.Name}"));
+
     /// <summary>Called by the view once the UI thread is up.</summary>
     public void StartHotkey()
     {
-        _hotkey ??= new GlobalHotkeyService();
-        _hotkey.Pressed += async (_, _) => await ToggleAsync().ConfigureAwait(true);
-        RegisterHotkey();
+        if (_hotkey is not null) return;
+        _hotkey = new GlobalHotkeyService();
+        _hotkey.Pressed += async (_, name) => await OnHotkeyAsync(name).ConfigureAwait(true);
+        RegisterHotkeys();
+    }
+
+    private async Task OnHotkeyAsync(string name)
+    {
+        switch (name)
+        {
+            case "toggle":
+                await ToggleAsync().ConfigureAwait(true);
+                break;
+            case "move":
+                string msg = WindowMover.MoveForegroundToNext();
+                if (msg.Length > 0) _main.AppendStatus("Move window: " + msg);
+                break;
+            case "record":
+                await ToggleRecordingAsync().ConfigureAwait(true);
+                break;
+            default:
+                if (name.StartsWith("profile", StringComparison.Ordinal)
+                    && int.TryParse(name.AsSpan(7), out int n) && n >= 1 && n <= Profiles.Count)
+                    await ApplyProfileByNameAsync(Profiles[n - 1].Name, prompt: false).ConfigureAwait(true);
+                break;
+        }
     }
 
     /// <summary>Hotkey / tray toggle. A manual toggle overrides auto-switching until the trigger app exits.</summary>
@@ -282,28 +346,222 @@ public sealed class ExtrasViewModel : ObservableObject
         return _main.ToggleSplitAsync();
     }
 
-    public void SetHotkey(uint modifiers, uint virtualKey)
+    /// <summary>Sets one of the configurable hotkeys: "toggle", "move" or "record".</summary>
+    public void SetHotkey(string which, uint modifiers, uint virtualKey)
     {
         if (modifiers == 0 || virtualKey == 0) return;
-        _settings.HotkeyModifiers = modifiers;
-        _settings.HotkeyKey = virtualKey;
-        OnPropertyChanged(nameof(HotkeyText));
+        switch (which)
+        {
+            case "move":
+                _settings.MoveHotkeyModifiers = modifiers;
+                _settings.MoveHotkeyKey = virtualKey;
+                OnPropertyChanged(nameof(MoveHotkeyText));
+                break;
+            case "record":
+                _settings.RecordHotkeyModifiers = modifiers;
+                _settings.RecordHotkeyKey = virtualKey;
+                OnPropertyChanged(nameof(RecordHotkeyText));
+                break;
+            default:
+                _settings.HotkeyModifiers = modifiers;
+                _settings.HotkeyKey = virtualKey;
+                OnPropertyChanged(nameof(HotkeyText));
+                break;
+        }
         Persist();
-        RegisterHotkey();
+        RegisterHotkeys();
     }
 
-    private void RegisterHotkey()
+    private void RegisterHotkeys()
     {
         if (_hotkey is null) return;
+        _hotkey.UnregisterWhere(_ => true);
         if (!_settings.HotkeyEnabled)
         {
-            _hotkey.Unregister();
-            HotkeyStatus = "Hotkey off.";
+            HotkeyStatus = "Hotkeys off (the emergency hotkey Ctrl+Alt+Shift+End always works).";
             return;
         }
-        HotkeyStatus = _hotkey.Register(_settings.HotkeyModifiers, _settings.HotkeyKey)
-            ? $"{HotkeyText} toggles the split on/off."
-            : $"{HotkeyText} is already used by another program — pick a different combination.";
+
+        var failed = new List<string>();
+        if (!_hotkey.Register("toggle", _settings.HotkeyModifiers, _settings.HotkeyKey)) failed.Add(HotkeyText);
+        if (!_hotkey.Register("move", _settings.MoveHotkeyModifiers, _settings.MoveHotkeyKey)) failed.Add(MoveHotkeyText);
+        if (!_hotkey.Register("record", _settings.RecordHotkeyModifiers, _settings.RecordHotkeyKey)) failed.Add(RecordHotkeyText);
+        if (_settings.ProfileHotkeysEnabled)
+        {
+            const uint mods = GlobalHotkeyService.MOD_CONTROL | GlobalHotkeyService.MOD_ALT | GlobalHotkeyService.MOD_SHIFT;
+            for (int i = 1; i <= Math.Min(9, Profiles.Count); i++)
+                if (!_hotkey.Register("profile" + i, mods, (uint)(0x30 + i)))
+                    failed.Add("Ctrl+Alt+Shift+" + i);
+        }
+
+        HotkeyStatus = failed.Count == 0
+            ? "All hotkeys active. Emergency off: Ctrl+Alt+Shift+End."
+            : "Already used by another program: " + string.Join(", ", failed) + " — pick different combinations.";
+    }
+
+    // ------------------------------------------------------------------ window layouts per profile
+
+    public RelayCommand SaveWindowsCommand { get; }
+    public RelayCommand ClearWindowsCommand { get; }
+
+    public string WindowsText => SelectedProfile is null
+        ? string.Empty
+        : SelectedProfile.Windows.Count == 0
+            ? "No window layout saved for this profile."
+            : $"{SelectedProfile.Windows.Count} window(s) are put back in place when this profile is applied.";
+
+    private void SaveWindows()
+    {
+        if (SelectedProfile is null) return;
+        try
+        {
+            SelectedProfile.Windows = WindowMover.CaptureLayout();
+            Persist();
+            _main.AppendStatus($"Profile '{SelectedProfile.Name}': saved the positions of {SelectedProfile.Windows.Count} window(s).");
+        }
+        catch (Exception ex)
+        {
+            _main.AppendStatus("Could not read the window positions: " + ex.Message);
+        }
+        OnPropertyChanged(nameof(WindowsText));
+    }
+
+    private void ClearWindows()
+    {
+        if (SelectedProfile is null) return;
+        SelectedProfile.Windows = new();
+        Persist();
+        OnPropertyChanged(nameof(WindowsText));
+    }
+
+    /// <summary>Applies a profile, then puts its saved windows back once the displays have settled.</summary>
+    private async Task<bool> ApplyProfileWithWindowsAsync(LayoutProfile profile, bool prompt)
+    {
+        bool ok = await _main.ApplyProfileAsync(profile, prompt).ConfigureAwait(true);
+        if (!ok || profile.Windows.Count == 0) return ok;
+        if (!await Task.Run(HidingStatus.IsSplitActive).ConfigureAwait(true)) return ok;
+
+        await Task.Delay(1500).ConfigureAwait(true);
+        try
+        {
+            int placed = WindowMover.RestoreLayout(profile.Windows);
+            _main.AppendStatus($"Profile '{profile.Name}': moved {placed} of {profile.Windows.Count} saved window(s) into place.");
+        }
+        catch (Exception ex)
+        {
+            _main.AppendStatus("Could not restore the window layout: " + ex.Message);
+        }
+        return ok;
+    }
+
+    // ------------------------------------------------------------------ primary / recording mode
+
+    public sealed record Choice(string Key, string Label);
+
+    public IReadOnlyList<Choice> PrimaryChoices { get; } = new[]
+    {
+        new Choice("segment1", "Segment 1"),
+        new Choice("segment2", "Segment 2"),
+        new Choice("segment3", "Segment 3"),
+        new Choice("segment4", "Segment 4"),
+        new Choice("other", "Other monitor (e.g. the 27\")"),
+    };
+
+    public string PrimaryKey
+    {
+        get => _settings.Primary;
+        set
+        {
+            if (string.IsNullOrEmpty(value) || _settings.Primary == value) return;
+            _settings.Primary = value;
+            OnPropertyChanged();
+            Persist();
+            _main.AppendStatus("Primary monitor choice saved — it takes effect the next time the split is applied.");
+        }
+    }
+
+    public string RecordingPrimaryKey
+    {
+        get => string.IsNullOrEmpty(_settings.RecordingPrimary) ? "other" : _settings.RecordingPrimary;
+        set
+        {
+            if (string.IsNullOrEmpty(value) || _settings.RecordingPrimary == value) return;
+            _settings.RecordingPrimary = value;
+            OnPropertyChanged();
+            Persist();
+        }
+    }
+
+    public bool RecordingMode => _settings.RecordingMode;
+
+    public string RecordingText => _settings.RecordingMode
+        ? $"Recording mode ON — notifications and pop-ups go to the chosen monitor. {RecordHotkeyText} to end."
+        : $"Recording mode off. {RecordHotkeyText} moves notifications and pop-ups off the segments while you record.";
+
+    public RelayCommand ToggleRecordingCommand { get; }
+
+    public async Task ToggleRecordingAsync()
+    {
+        if (_main.IsBusy) return;
+        _settings.RecordingMode = !_settings.RecordingMode;
+        Persist();
+        OnPropertyChanged(nameof(RecordingMode));
+        OnPropertyChanged(nameof(RecordingText));
+        _main.AppendStatus(_settings.RecordingMode ? "--- Recording mode on ---" : "--- Recording mode off ---");
+
+        // Primary is chosen while applying, so re-apply the running split.
+        if (await Task.Run(HidingStatus.IsSplitActive).ConfigureAwait(true))
+            await _main.ReapplyLastAsync().ConfigureAwait(true);
+    }
+
+    // ------------------------------------------------------------------ overlays
+
+    public IReadOnlyList<int> SegmentNumbers { get; } = new[] { 1, 2, 3, 4 };
+
+    public bool BorderEnabled
+    {
+        get => _settings.BorderEnabled;
+        set { if (_settings.BorderEnabled == value) return; _settings.BorderEnabled = value; OverlaySettingChanged(); }
+    }
+
+    public int BorderSegment
+    {
+        get => _settings.BorderSegment;
+        set { if (_settings.BorderSegment == value) return; _settings.BorderSegment = value; OverlaySettingChanged(); }
+    }
+
+    public bool DividerEnabled
+    {
+        get => _settings.DividerEnabled;
+        set { if (_settings.DividerEnabled == value) return; _settings.DividerEnabled = value; OverlaySettingChanged(); }
+    }
+
+    private void OverlaySettingChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+    {
+        OnPropertyChanged(name);
+        Persist();
+        RefreshOverlays();
+    }
+
+    public void RefreshOverlays()
+    {
+        try { _overlays.Refresh(_settings); }
+        catch (Exception ex) { _main.AppendStatus("Overlay error: " + ex.Message); }
+    }
+
+    // ------------------------------------------------------------------ split ratio
+
+    public bool SplitRatioAvailable => _main.IsTwoSegmentLayout;
+
+    public double SplitRatioPercent
+    {
+        get => _splitRatio;
+        set
+        {
+            value = Math.Clamp(Math.Round(value), 20, 80);
+            if (!SetProperty(ref _splitRatio, value)) return;
+            _main.SetSplitRatio(value / 100.0);
+        }
     }
 
     // ------------------------------------------------------------------ auto-switch
@@ -377,7 +635,7 @@ public sealed class ExtrasViewModel : ObservableObject
 
                 _autoActive = target;
                 _main.AppendStatus($"Auto-switch: trigger app running → profile '{target.Name}'.");
-                if (!await _main.ApplyProfileAsync(target, promptToConfirm: false).ConfigureAwait(true))
+                if (!await ApplyProfileWithWindowsAsync(target, prompt: false).ConfigureAwait(true))
                     _autoSuppressed = target; // don't retry every 2 s
                 return;
             }
@@ -448,6 +706,9 @@ public sealed class ExtrasViewModel : ObservableObject
         DeleteProfileCommand.RaiseCanExecuteChanged();
         SaveArrangementCommand.RaiseCanExecuteChanged();
         ResetArrangementCommand.RaiseCanExecuteChanged();
+        SaveWindowsCommand.RaiseCanExecuteChanged();
+        ClearWindowsCommand.RaiseCanExecuteChanged();
+        ToggleRecordingCommand.RaiseCanExecuteChanged();
     }
 
     private void Persist()
@@ -464,7 +725,13 @@ public sealed class ExtrasViewModel : ObservableObject
             _main.AppendStatus("Could not save profiles: " + ex.Message);
         }
         ProfilesChanged?.Invoke(this, EventArgs.Empty);
+        OnPropertyChanged(nameof(ProfileHotkeysText));
+        RegisterHotkeys(); // profile hotkeys follow the list
     }
 
-    public void Dispose() => _hotkey?.Dispose();
+    public void Dispose()
+    {
+        _hotkey?.Dispose();
+        _overlays.Dispose();
+    }
 }

@@ -124,6 +124,44 @@ public static class SplitArrangement
         return saved;
     }
 
+    /// <summary>
+    /// Which monitor becomes primary under the split. Never the covered physical monitor.
+    /// Recording mode moves primary off the segments so notifications and pop-ups land elsewhere.
+    /// </summary>
+    public static string ResolvePrimary(IReadOnlyList<MonitorInfo> current, IReadOnlyList<MonitorInfo> virtualMonitors,
+                                        string physicalDevice, Action<string>? log = null)
+    {
+        ExtrasSettings extras;
+        try { extras = ExtrasStore.Load(); }
+        catch { extras = new ExtrasSettings(); }
+
+        var others = current.Where(m => !m.IsDeskSplitVirtual && !Same(m.DeviceName, physicalDevice))
+                            .OrderBy(m => m.PositionX).ToList();
+
+        string? Resolve(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return null;
+            if (Same(key, "other")) return others.FirstOrDefault()?.DeviceName;
+            for (int i = 0; i < virtualMonitors.Count; i++)
+                if (Same(key, SegmentKey(i))) return virtualMonitors[i].DeviceName;
+            return others.FirstOrDefault(m => Same(m.DeviceName, key))?.DeviceName;
+        }
+
+        if (extras.RecordingMode)
+        {
+            string? rec = Resolve(extras.RecordingPrimary)
+                          ?? others.FirstOrDefault()?.DeviceName
+                          ?? (virtualMonitors.Count > 1 ? virtualMonitors[^1].DeviceName : null);
+            if (rec is not null)
+            {
+                log?.Invoke("Recording mode: notifications and pop-ups go to the primary monitor " + rec + ".");
+                return rec;
+            }
+        }
+
+        return Resolve(extras.Primary) ?? virtualMonitors[0].DeviceName;
+    }
+
     // ------------------------------------------------------------------ strategies
 
     private static List<DisplayArranger.MonitorPlacement>? TrySaved(

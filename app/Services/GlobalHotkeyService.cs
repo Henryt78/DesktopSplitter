@@ -5,8 +5,8 @@ using System.Windows.Interop;
 namespace DesktopSplitter.Services;
 
 /// <summary>
-/// One system-wide hotkey via RegisterHotKey on a hidden message-only window.
-/// Must be created and used on the UI thread.
+/// System-wide hotkeys via RegisterHotKey on a hidden message-only window.
+/// Each hotkey has a caller-chosen name. Must be created and used on the UI thread.
 /// </summary>
 public sealed class GlobalHotkeyService : IDisposable
 {
@@ -16,10 +16,13 @@ public sealed class GlobalHotkeyService : IDisposable
     public const uint MOD_WIN = 0x8;
     private const uint MOD_NOREPEAT = 0x4000;
     private const int WM_HOTKEY = 0x0312;
-    private const int HotkeyId = 0x5D51;
+    private const int FirstId = 0x5D51;
 
     private readonly HwndSource _source;
-    private bool _registered;
+    private readonly Dictionary<string, int> _ids = new(StringComparer.Ordinal);
+    private readonly Dictionary<int, string> _names = new();
+    private readonly HashSet<int> _registered = new();
+    private int _nextId = FirstId;
     private bool _disposed;
 
     public GlobalHotkeyService()
@@ -35,22 +38,34 @@ public sealed class GlobalHotkeyService : IDisposable
         _source.AddHook(WndProc);
     }
 
-    public event EventHandler? Pressed;
+    /// <summary>Raised with the hotkey's name.</summary>
+    public event EventHandler<string>? Pressed;
 
-    /// <summary>Registers (or re-registers) the hotkey. Returns false if another app already owns it.</summary>
-    public bool Register(uint modifiers, uint virtualKey)
+    /// <summary>(Re-)registers <paramref name="name"/>. False if another app already owns the combination.</summary>
+    public bool Register(string name, uint modifiers, uint virtualKey)
     {
-        Unregister();
+        Unregister(name);
         if (_disposed || virtualKey == 0 || modifiers == 0) return false;
-        _registered = RegisterHotKey(_source.Handle, HotkeyId, modifiers | MOD_NOREPEAT, virtualKey);
-        return _registered;
+        if (!_ids.TryGetValue(name, out int id))
+        {
+            id = _nextId++;
+            _ids[name] = id;
+            _names[id] = name;
+        }
+        bool ok = RegisterHotKey(_source.Handle, id, modifiers | MOD_NOREPEAT, virtualKey);
+        if (ok) _registered.Add(id);
+        return ok;
     }
 
-    public void Unregister()
+    public void Unregister(string name)
     {
-        if (!_registered) return;
-        UnregisterHotKey(_source.Handle, HotkeyId);
-        _registered = false;
+        if (!_ids.TryGetValue(name, out int id) || !_registered.Remove(id)) return;
+        UnregisterHotKey(_source.Handle, id);
+    }
+
+    public void UnregisterWhere(Func<string, bool> predicate)
+    {
+        foreach (string name in _ids.Keys.Where(predicate).ToList()) Unregister(name);
     }
 
     public static string Describe(uint modifiers, uint virtualKey)
@@ -70,10 +85,10 @@ public sealed class GlobalHotkeyService : IDisposable
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WM_HOTKEY && wParam.ToInt32() == HotkeyId)
+        if (msg == WM_HOTKEY && _names.TryGetValue(wParam.ToInt32(), out string? name))
         {
             handled = true;
-            Pressed?.Invoke(this, EventArgs.Empty);
+            Pressed?.Invoke(this, name);
         }
         return IntPtr.Zero;
     }
@@ -81,7 +96,8 @@ public sealed class GlobalHotkeyService : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        Unregister();
+        foreach (int id in _registered) UnregisterHotKey(_source.Handle, id);
+        _registered.Clear();
         _disposed = true;
         _source.RemoveHook(WndProc);
         _source.Dispose();
