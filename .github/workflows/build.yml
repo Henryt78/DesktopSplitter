@@ -46,17 +46,24 @@ jobs:
           # VS 2026 (MSBuild 18) needs WDK 10.0.28000+; 26100 only ships VS 2022 build tasks.
           # The WDK MSI also needs the matching Windows SDK.
           if ($env:DS_VS_RANGE) { $ver = '10.0.26100' } else { $ver = '10.0.28000' }
-          winget search Microsoft.WindowsWDK --accept-source-agreements |
-            ForEach-Object { Write-Host "::warning::winget: $_" }
+          function Show-Ids($q) {
+            winget search $q --source winget --accept-source-agreements --disable-interactivity |
+              Where-Object { $_ -match 'Microsoft\.Windows' } |
+              ForEach-Object { Write-Host "::warning::winget $($q): $($_.Trim())" }
+          }
           if ($ver -ne '10.0.26100') {
             winget install --id "Microsoft.WindowsSDK.$ver" --exact `
               --accept-source-agreements --accept-package-agreements --disable-interactivity
-            if ($LASTEXITCODE -ne 0) { throw "winget SDK $ver install failed ($LASTEXITCODE)" }
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::winget SDK $ver install failed ($LASTEXITCODE)"; Show-Ids 'WindowsSDK'; exit 1
+            }
           }
           winget install --id "Microsoft.WindowsWDK.$ver" --exact `
             --accept-source-agreements --accept-package-agreements `
             --disable-interactivity
-          if ($LASTEXITCODE -ne 0) { throw "winget WDK $ver install failed ($LASTEXITCODE)" }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::winget WDK $ver install failed ($LASTEXITCODE)"; Show-Ids 'WindowsWDK'; exit 1
+          }
 
       - name: Add WDK component to Visual Studio
         shell: pwsh
